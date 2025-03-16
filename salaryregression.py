@@ -6,7 +6,7 @@ import tensorflow
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
-
+import datetime
 
 # Read CSV
 data = pd.read_csv("Churn_Modelling.csv")
@@ -39,17 +39,9 @@ print(f"==>> geo_encoder_df: {geo_encoder_df}")
 data = pd.concat([data.drop("Geography", axis=1), geo_encoder_df], axis=1)
 print(f"==>> data.head(): {data.head()}")
 
-# Saves label_encoder_gender and onehot_encoder_geo to reuse later.
-with open("label_encoder_gender.pkl", "wb") as file:
-    pickle.dump(label_encoder_gender, file)
-
-with open("onehot_encoder_geo.pkl", "wb") as file:
-    pickle.dump(onehot_encoder_geo, file)
-
-# X = Features, contains all column except of the answer we want
-# Y = Target, contains the just answer which is the column Exited. (churn label: 0 = stayed, 1 = left).
-X = data.drop("Exited", axis=1)
-y = data["Exited"]
+# Split the data into features and target
+X = data.drop("EstimatedSalary", axis=1)
+y = data["EstimatedSalary"]
 
 # Splits 80% training data and 20% testing data.
 X_train, X_test, y_train, y_test = train_test_split(
@@ -61,8 +53,16 @@ scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.fit_transform(X_test)
 
+# Save the encoders and scaler for later use
+with open("label_encoder_gender.pkl", "wb") as file:
+    pickle.dump(label_encoder_gender, file)
+
+with open("onehot_encoder_geo.pkl", "wb") as file:
+    pickle.dump(onehot_encoder_geo, file)
+
 with open("scaler.pkl", "wb") as file:
     pickle.dump(scaler, file)
+
 
 # Define a Neural Network Model
 # - **Input Layer**: `Dense(64, activation="relu")`
@@ -79,19 +79,16 @@ model = Sequential(
 
 print(f"==>> model.summary(): {model.summary()}")
 
-#  Compile the Model
-# - **Optimizer**: `Adam` (adaptive learning).
-# - **Loss Function**: `binary_crossentropy` (for binary classification).
-# - **Metrics**: `"accuracy"`.
-opt = tensorflow.keras.optimizers.Adam(learning_rate=0.01)
-model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-print(f"==>> model.summary(): {model.summary()}")
+## compile the model
+model.compile(optimizer="adam", loss="mean_absolute_error", metrics=["mae"])
+
+model.summary()
 
 # Define Callbacks
 # - TensorBoard: Logs training progress.
 # - EarlyStopping: Stops training when `val_loss` stops improving.
-log_dir = "logs/fit"
-tensorflow_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+log_dir = "regressionlogs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 early_stopping_callback = EarlyStopping(
     monitor="val_loss", patience=10, restore_best_weights=True
@@ -105,9 +102,14 @@ history = model.fit(
     y_train,
     validation_data=(X_test, y_test),
     epochs=100,
-    callbacks=[early_stopping_callback, tensorflow_callback],
+    callbacks=[early_stopping_callback, tensorboard_callback],
 )
+
+## Evaluate model on the test data
+test_loss, test_mae = model.evaluate(X_test, y_test)
+print(f"Test MAE : {test_mae}")
+
 
 # Save the Model
 # Saves the trained model to a file (model.h5) for later use to predict real world problem
-model.save("model.h5")
+model.save("regression_model.h5")
